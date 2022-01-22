@@ -825,6 +825,16 @@ public: // for now...
 #define BX_SUPPORT_SVM_EXTENSION(feature_mask) \
    (BX_CPU_THIS_PTR svm_extensions_bitmask & (feature_mask))
 
+#if BX_RISCV
+  bool riscv_mode;
+  bx_gen_reg_t riscv_reg[5];
+
+  // r8  => t1 (x6)
+  // r9  => a0 (x10)
+  // r10 => a1 (x11)
+  // r11 => a7 (x17)
+#endif
+
   // General register set
   // rax: accumulator
   // rbx: base

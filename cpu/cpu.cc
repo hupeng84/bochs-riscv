@@ -126,6 +126,9 @@ void BX_CPU_C::cpu_loop(void)
       BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
       RIP += i->ilen();
       BX_CPU_CALL_METHOD(i->execute1, (i)); // might iterate repeat instruction
+#if BX_RISCV  
+      BX_CPU_THIS_PTR riscv_mode = false;
+#endif  
       BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
       BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
       BX_CPU_THIS_PTR icount++;
@@ -139,6 +142,16 @@ void BX_CPU_C::cpu_loop(void)
 
       if (BX_CPU_THIS_PTR async_event) break;
 
+#if BX_RISCV
+      if (RIP >= 0x7c00 && RIP <= 0x7c2f) {
+        // BX_INFO(("entry RISC-V mode=========="));
+        BX_CPU_THIS_PTR riscv_mode = true;
+#else
+      if (RIP == 0x7c00) {
+        BX_INFO(("entry x86 mode=========="));
+#endif
+      }
+      
       if (++i == last) {
         entry = getICacheEntry();
         i = entry->i;

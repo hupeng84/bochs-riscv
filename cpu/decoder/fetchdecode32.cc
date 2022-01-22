@@ -2371,6 +2371,184 @@ Bit16u findOpcode(const Bit64u *opMap, Bit32u decmask)
   return ia_opcode;
 }
 
+#if BX_RISCV
+#include <map>
+#define X0 (BX_CPU_THIS_PTR riscv_reg[0].dword.erx)
+#define T1 (BX_CPU_THIS_PTR riscv_reg[1].dword.erx)
+#define A0 (BX_CPU_THIS_PTR riscv_reg[2].dword.erx)
+#define A1 (BX_CPU_THIS_PTR riscv_reg[3].dword.erx)
+#define A7 (BX_CPU_THIS_PTR riscv_reg[4].dword.erx)
+
+#define EAX (BX_CPU_THIS_PTR gen_reg[0].dword.erx)
+#define EBX (BX_CPU_THIS_PTR gen_reg[3].dword.erx)
+#define ECX (BX_CPU_THIS_PTR gen_reg[1].dword.erx)
+#define EDX (BX_CPU_THIS_PTR gen_reg[2].dword.erx)
+#define EBP (BX_CPU_THIS_PTR gen_reg[5].dword.erx)
+#define ESP (BX_CPU_THIS_PTR gen_reg[4].dword.erx)
+
+#define EIP (BX_CPU_THIS_PTR gen_reg[BX_32BIT_REG_EIP].dword.erx)
+
+std::map<Bit8u, Bit8u> riscv_reg_map = {
+  {0, 0},     // x0
+  {6, 1},  // t1
+  {10, 2},  // a0
+  {11, 3},  // a1
+  {17, 4}   // a7
+};
+
+#define RISCV_VAL(n)  BX_CPU_THIS_PTR riscv_reg[riscv_reg_map[n]].dword.erx
+
+void riscv_auipc(bxInstruction_c *i) {
+  // x[rd] = pc + imme
+  Bit16u seg_reg = BX_CPU_THIS_PTR sregs[1].selector.value;
+  BX_CPU_THIS_PTR load_seg_reg(&BX_CPU_THIS_PTR sregs[3], seg_reg);
+  BX_CPU_THIS_PTR load_seg_reg(&BX_CPU_THIS_PTR sregs[0], seg_reg);
+  RISCV_VAL(i->riscvMeta.rd) = EIP - i->ilen() + i->riscvMeta.imme;
+}
+void riscv_addi(bxInstruction_c *i) {
+  RISCV_VAL(i->riscvMeta.rd) = RISCV_VAL(i->riscvMeta.rs1)
+                                    + i->riscvMeta.imme;
+}
+void riscv_lb(bxInstruction_c *i) {
+  
+}
+void riscv_ecall(bxInstruction_c *i) {
+  EBP = A1;   // 字符串地址赋值给BP
+  ECX = 1;    // 要显示的字符串长度
+  // AH: 13H  在Teletype模式下显示字符, 
+  // AL: 显示输出方式
+  // 0--字符串中只含显示字符，其显示属性在BL中。显示后，光标位置不变
+  // 1--字符串中只含显示字符，其显示属性在BL中。显示后，光标位置改变
+  // 2--字符串中含显示字符和显示属性。显示后，光标位置不变
+  // 3--字符串中含显示字符和显示属性。显示后，光标位置改变
+  EAX = 0x1301; 
+  // BH: 0 分页页码 
+  // BL: 属性，背景色和文字颜色, c: 红色文字
+  EBX = 0x000c;
+  // DH: 坐标，行
+  // DL: 坐标， 列
+  EDX = 13 - T1;
+
+  // 调用 字符串显示服务 中断号 10H
+  BX_CPU_THIS_PTR interrupt(0x10, BX_SOFTWARE_INTERRUPT, 0, 0);
+}
+void riscv_bne(bxInstruction_c *i) {
+  // funt3 == 0  beq
+  // funt3 == 1  bne
+  
+  if (i->riscvMeta.funct3 == 1 && RISCV_VAL(i->riscvMeta.rs1) != RISCV_VAL(i->riscvMeta.rs2)) {
+    // 因为执行之前，EIP已经指向下一条指令了
+     EIP +=  i->riscvMeta.offset - i->ilen();
+  } else if (i->riscvMeta.funct3 == 0 && RISCV_VAL(i->riscvMeta.rs1) == RISCV_VAL(i->riscvMeta.rs2)) {
+     EIP +=  i->riscvMeta.offset - i->ilen();
+  }
+}
+void riscv_auipc_parse(bxInstruction_c *i) {
+  Bit32u b1 = i->riscvMeta.dword;
+  i->riscvMeta.rd = (b1 >> 7) & 0x1F;  // 取 [11:7]
+  i->riscvMeta.imme = (b1 >> 12);   // [31:12]
+}
+void riscv_addi_parse(bxInstruction_c *i) {
+  Bit32u b1 = i->riscvMeta.dword;
+  i->riscvMeta.rd = (b1 >> 7) & 0x1F;  // 取 [11:7]
+  i->riscvMeta.funct3 = 0;
+  i->riscvMeta.rs1 = (b1 >> 15) & 0x1F; // [19:15]
+  i->riscvMeta.imme = (b1 >> 20); // [31:20]
+}
+void riscv_lb_parse(bxInstruction_c *i) {
+  Bit32u b1 = i->riscvMeta.dword;
+  i->riscvMeta.rd = (b1 >> 7) & 0x1F;  // 取 [11:7]
+  i->riscvMeta.funct3 = 0;
+  i->riscvMeta.rs1 = (b1 >> 15) & 0x1F; // [19:15]
+  i->riscvMeta.offset = (b1 >> 20); // [31:20]
+}
+void riscv_ecall_parse(bxInstruction_c *i) {
+  i->riscvMeta.rd = 0;
+  i->riscvMeta.funct3 = 0;
+  i->riscvMeta.rs1 = 0;
+  i->riscvMeta.imme = 0;
+}
+void riscv_bne_parse(bxInstruction_c *i) {
+  Bit32u b1 = i->riscvMeta.dword;
+  i->riscvMeta.funct3 = (b1 >> 12) & 0x07; //[14:12]
+  i->riscvMeta.rs1 = (b1 >> 15) & 0x1F; // [19:15]
+  i->riscvMeta.rs2 = (b1 >> 20) & 0x1F; // [24:20]
+  i->riscvMeta.offset = ((b1 >> 31) << 12) | (((b1 >> 7) & 0x01) << 11) | ((b1 & 0x7E000000) >> 20) | ((b1 & 0xF00) >> 7);
+
+  // 处理负数
+  if (i->riscvMeta.offset == (1 << 12)) i->riscvMeta.offset = 0;
+  else if (i->riscvMeta.offset > (1 << 12)) i->riscvMeta.offset -= (1 << 13);
+}
+void riscv_cli_parse(bxInstruction_c *i) {
+  Bit16u b1 = i->riscvMeta.word;
+  i->riscvMeta.rd = (b1 >> 7) & 0x1F; // 取 [11:7]
+  i->riscvMeta.rs1 = 0;
+  i->riscvMeta.imme = ((b1 & 0x1000) >> 7) | ((b1 >> 2) & 0x1F); // 5位
+
+  // 处理负数
+  if (i->riscvMeta.imme == (1 << 5)) i->riscvMeta.imme = 0;
+  else if (i->riscvMeta.imme > (1<<5)) i->riscvMeta.imme -= (1<<6);
+}
+void riscv_caddi_parse(bxInstruction_c *i) {
+  Bit16u b1 = i->riscvMeta.word;
+
+  i->riscvMeta.rd = i->riscvMeta.rs1 = (b1 >> 7) & 0x1F; // 取 [11:7]
+  i->riscvMeta.imme = ((b1 & 0x1000) >> 7) | ((b1 >> 2) & 0x1F); // 5位
+
+  // 处理负数
+  if (i->riscvMeta.imme == (1 << 5)) i->riscvMeta.imme = 0;
+  else if (i->riscvMeta.imme > (1 << 5)) i->riscvMeta.imme -= (1 << 6);
+}
+
+static std::map<Bit16u, std::pair<BxExecutePtr_tR, BxExecutePtr_tR>> riscv_map = {
+  {0x17, {riscv_auipc_parse, riscv_auipc}},
+  {0x13, {riscv_addi_parse, riscv_addi}},
+  {0x03, {riscv_lb_parse, riscv_lb}},
+  {0x73, {riscv_ecall_parse, riscv_ecall}},
+  {0x63, {riscv_bne_parse, riscv_bne}}
+};
+static std::map<Bit16u, std::pair<BxExecutePtr_tR, BxExecutePtr_tR>> riscvc_map = {
+  {0x09, {riscv_cli_parse, riscv_addi}},
+  {0x01, {riscv_caddi_parse, riscv_addi}}
+};
+
+int fetchDecodeRiscv(const Bit8u *iptr, bool is_32, bxInstruction_c *i, unsigned remainingInPage)
+{
+  // 先取4个字节 小端取
+  unsigned b1 = iptr[3] << 24 | iptr[2] << 16 | iptr[1] << 8 | iptr[0];
+  i->init(0, 0, 0, 0);
+
+  i->setSeg(BX_SEG_REG_DS);
+
+  // decode
+  Bit16u opcode = b1 & 0x7F; // 只保留 [6:0]
+  if (riscv_map.count(opcode)) {
+    i->riscvMeta.dword = b1;
+    i->riscvMeta.opcode = opcode;
+    riscv_map[opcode].first(i);
+    i->execute1 = riscv_map[opcode].second;
+    i->setILen(4);
+    iptr += 4;
+  } else {
+    b1 = b1 & 0xFFFF;   // 取2个字节
+    opcode = ((b1 & 0xE000) >> 11) | (b1 & 0x03);
+    if (riscvc_map.count(opcode)) {
+      i->riscvMeta.opcode = opcode;
+      i->riscvMeta.word = b1;
+      riscvc_map[opcode].first(i);
+      i->execute1 = riscvc_map[opcode].second;
+      i->setILen(2);
+      iptr += 2;
+    } else {
+      // not found
+      return -1;
+    }
+  } 
+
+  return(0);
+}
+#endif
+
 int fetchDecode32(const Bit8u *iptr, bool is_32, bxInstruction_c *i, unsigned remainingInPage)
 {
   if (remainingInPage > 15) remainingInPage = 15;

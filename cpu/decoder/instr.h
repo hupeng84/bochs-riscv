@@ -62,6 +62,24 @@ public:
   } handlers;
 #endif
 
+#if BX_RISCV
+  struct
+  {
+    union 
+    {
+      Bit32u dword;
+      Bit16u word;
+    };
+    Bit16u opcode;
+    Bit8u rd;
+    Bit8u funct3;
+    Bit8u rs1;
+    Bit8u rs2;
+    int imme;
+    Bit32u offset;
+  } riscvMeta;
+#endif
+
   struct {
     // 15...0 opcode
     Bit16u ia_opcode;

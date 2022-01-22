@@ -115,7 +115,17 @@ bxICacheEntry_c* BX_CPU_C::serveICacheMiss(Bit32u eipBiased, bx_phy_address pAdd
       ret = fetchDecode64(fetchPtr, i, remainingInPage);
     else
 #endif
-      ret = fetchDecode32(fetchPtr, BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, i, remainingInPage);
+#if BX_RISCV
+extern int fetchDecodeRiscv(const Bit8u *fetchPtr, bool is_32, bxInstruction_c *i, unsigned remainingInPage);
+    if (BX_CPU_THIS_PTR riscv_mode)
+      ret = fetchDecodeRiscv(fetchPtr, BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, i, remainingInPage);
+    else
+#endif
+       ret = fetchDecode32(fetchPtr, BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, i, remainingInPage);
+
+#if BX_RISCV
+    if (BX_CPU_THIS_PTR riscv_mode) { entry->tlen++; break;}
+#endif
 
     if (ret < 0) {
       // Fetching instruction on segment/page boundary

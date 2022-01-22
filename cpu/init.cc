@@ -702,6 +702,13 @@ void BX_CPU_C::reset(unsigned source)
   else
     BX_INFO(("cpu reset"));
 
+#if BX_RISCV
+  BX_CPU_THIS_PTR riscv_mode = false;
+   for (n=0;n<5;n++) {
+    BX_CPU_THIS_PTR riscv_reg[n].dword.erx = 0;
+   }
+#endif
+
   for (n=0;n<BX_GENERAL_REGISTERS;n++)
     BX_WRITE_32BIT_REGZ(n, 0);
 
